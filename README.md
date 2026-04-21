@@ -199,3 +199,31 @@ If not provided, default contacts are generated in the format:
 
 - Current PHC dispatch is implemented as structured dispatch logging for operational workflow simulation.
 - The architecture is ready to integrate real channels (SMTP, SMS gateways, WhatsApp API, webhook adapters) in the same dispatch flow.
+
+## Deploy on Render
+
+This repo is now Render-ready with:
+
+- `render.yaml` (Blueprint service config)
+- `runtime.txt` (Python runtime)
+- `gunicorn` in requirements
+- environment-based server port binding
+
+### Option 1: One-time setup from Render Dashboard
+
+1. Login to Render.
+2. Click **New +** -> **Web Service**.
+3. Connect your GitHub repo:
+  - `Revanth-sai-2006/Disease-Outbreak-Detection`
+4. Render should detect settings from `render.yaml`.
+5. Click **Create Web Service**.
+
+### Option 2: Manual service settings
+
+If you choose manual setup instead of Blueprint:
+
+- **Environment**: Python
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `gunicorn dashboard_server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
+
+After successful deploy, Render will provide a public URL for the dashboard.
