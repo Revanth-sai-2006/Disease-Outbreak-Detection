@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+models/*.joblib
+data/processed/*.csv
+outputs/*.csv
+outputs/*.png
+outputs/*.json

@@ -1,0 +1,117 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>National Disease Surveillance Bulletin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/outputs/styles.css" />
+</head>
+<body>
+  <div class="frame">
+    <header class="mast">
+      <div class="mast-top">
+        <div class="seal">PUBLIC<br/>HEALTH</div>
+        <div class="titles">
+          <h1>National Disease Surveillance Bulletin</h1>
+          <p id="headline">Loading regional outbreak intelligence from live sources and historical records...</p>
+        </div>
+        <div class="status-panel">
+          <div><strong>Division:</strong> Integrated Outbreak Monitoring Cell</div>
+          <div><strong>Cycle:</strong> Near Real-Time Advisory</div>
+          <div><strong>Last Sync:</strong> <span id="last-sync">pending</span></div>
+        </div>
+      </div>
+      <div class="mast-strip">
+        <span class="live-chip"><span class="dot"></span> LIVE DETECTION</span>
+        <span>Auto-refresh in <strong id="refresh-countdown">90s</strong></span>
+        <span>Assessment horizon: <strong>14 days</strong></span>
+        <button class="theme-btn" id="theme-toggle" type="button">Lumen Mode</button>
+      </div>
+    </header>
+
+    <section class="grid" id="kpis"></section>
+
+    <section class="analytics">
+      <article class="panel">
+        <h3>Detection Intensity Index</h3>
+        <p>Average regional outbreak probability in current cycle.</p>
+        <div class="value" id="intensity-value">0.000</div>
+        <div class="meter"><div id="intensity-bar"></div></div>
+        <p id="intensity-caption">Awaiting analytics feed.</p>
+      </article>
+      <article class="panel">
+        <h3>Disease Type Analytics</h3>
+        <p id="type-analytics">Waiting for distribution analysis...</p>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Region-Wise Upcoming Outbreak Risk</h2>
+      <div class="section-body">
+        <div class="source-line"><strong>Search any city in India:</strong> Type a city and click Generate Report.</div>
+        <div class="search-row">
+          <input class="search-input" id="city-search" placeholder="Example: Indore, Kochi, Guwahati" />
+          <button class="search-btn" id="city-search-btn">Generate Report</button>
+        </div>
+        <div class="source-line source-line-compact">Click any city/region row to view complete local disease spread details.</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Region</th>
+                <th>Probability</th>
+                <th>Severity</th>
+                <th>Trend</th>
+                <th>Likely Disease</th>
+                <th>Disease Family</th>
+                <th>Outbreak Type</th>
+                <th>Key Symptoms</th>
+                <th>Alert</th>
+                <th>Window</th>
+                <th>Report Date</th>
+              </tr>
+            </thead>
+            <tbody id="region-rows"></tbody>
+          </table>
+        </div>
+        <div class="meta-row">
+          <span id="generated">Generated at: unknown</span>
+          <span>Advisory use only. Not a clinical diagnosis.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Selected City/Region Detailed Brief</h2>
+      <div class="section-body" id="city-detail-panel">
+        <div class="source-line">Select a city/region from the table above to view detailed spread intelligence.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Source and Integrity Status</h2>
+      <div class="section-body source-line" id="source-status"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">PHC Alert Automation</h2>
+      <div class="section-body">
+        <div class="control-row">
+          <label class="toggle-wrap" for="phc-auto-toggle">
+            <input type="checkbox" id="phc-auto-toggle" />
+            <span>Auto-send outbreak alerts to local PHCs</span>
+          </label>
+          <button class="search-btn" id="phc-send-btn" type="button">Send PHC Alert Now</button>
+        </div>
+        <div class="source-line" id="phc-alert-status">PHC alert dispatcher is idle.</div>
+      </div>
+    </section>
+
+    <section id="error-box"></section>
+  </div>
+
+  <script src="/outputs/app.js"></script>
+</body>
+</html>
