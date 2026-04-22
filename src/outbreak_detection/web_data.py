@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+import os
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote, quote_plus
 from xml.etree import ElementTree
@@ -23,16 +24,28 @@ def fetch_web_surveillance_bundle(config: Dict[str, Any]) -> Tuple[pd.DataFrame,
     history_days = int(web_cfg.get("history_days", 160))
     lookback_days = int(web_cfg.get("live_search_lookback_days", 3))
     timeout = int(web_cfg.get("request_timeout_seconds", 20))
+    weather_cfg = config.get("apis", {}).get("weather", {})
+    weather_key = str(weather_cfg.get("api_key", "")).strip() or os.environ.get("OPENWEATHER_API_KEY", "").strip()
+    weather_base_url = str(weather_cfg.get("base_url", "https://api.openweathermap.org/data/2.5/weather"))
+    weather_units = str(weather_cfg.get("units", "metric"))
 
     region_frames: List[pd.DataFrame] = []
     news_counts: Dict[str, int] = {}
     term_profiles: Dict[str, Dict[str, int]] = {}
+    weather_profiles: Dict[str, Dict[str, Any]] = {}
 
     for region in regions:
         history_df = _fetch_region_history_with_fallback(region=region, history_days=history_days, timeout=timeout)
         term_counts = _fetch_live_search_profile(region=region, terms=terms, lookback_days=lookback_days, timeout=timeout)
         news_counts[region] = int(sum(term_counts.values()))
         term_profiles[region] = term_counts
+        weather_profiles[region] = _fetch_current_weather_profile(
+            region=region,
+            api_key=weather_key,
+            base_url=weather_base_url,
+            units=weather_units,
+            timeout=timeout,
+        )
         history_df["region"] = region
         region_frames.append(history_df)
 
@@ -46,6 +59,7 @@ def fetch_web_surveillance_bundle(config: Dict[str, Any]) -> Tuple[pd.DataFrame,
     for frame in region_frames:
         region = str(frame["region"].iloc[0])
         news_score = float(news_counts.get(region, 0) / max_news)
+        weather_risk_scalar = float(weather_profiles.get(region, {}).get("risk", 0.0))
 
         trend = frame["hospital_cases"].rolling(window=7, min_periods=2).mean().pct_change().fillna(0.0)
         trend_norm = _minmax(trend)
@@ -55,7 +69,8 @@ def fetch_web_surveillance_bundle(config: Dict[str, Any]) -> Tuple[pd.DataFrame,
 
         frame = frame.copy()
         frame["social_signal_index"] = np.clip((0.65 * trend_norm) + (0.35 * news_score), 0.0, 1.0)
-        frame["weather_risk_index"] = np.clip((0.45 * trend_norm) + (0.55 * volatility_norm), 0.0, 1.0)
+        weather_component = np.clip((0.55 * volatility_norm) + (0.45 * weather_risk_scalar), 0.0, 1.0)
+        frame["weather_risk_index"] = np.clip((0.45 * trend_norm) + (0.55 * weather_component), 0.0, 1.0)
         out_frames.append(frame)
 
     out = pd.concat(out_frames, ignore_index=True)
@@ -63,11 +78,51 @@ def fetch_web_surveillance_bundle(config: Dict[str, Any]) -> Tuple[pd.DataFrame,
     out.reset_index(drop=True, inplace=True)
     context = {
         "term_profiles": term_profiles,
+        "weather_profiles": weather_profiles,
         "regions": regions,
         "live_search_terms": terms,
         "live_search_lookback_days": lookback_days,
+        "weather_api_configured": bool(weather_key),
     }
     return out, context
+
+
+def _fetch_current_weather_profile(
+    region: str,
+    api_key: str,
+    base_url: str,
+    units: str,
+    timeout: int,
+) -> Dict[str, Any]:
+    if not api_key:
+        return {"risk": 0.0, "source": "fallback", "reason": "missing_api_key"}
+
+    params = {"q": region, "appid": api_key, "units": units}
+    try:
+        response = requests.get(base_url, params=params, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+
+        main = payload.get("main", {})
+        weather = payload.get("weather", [])
+        temp = float(main.get("temp", 0.0) or 0.0)
+        humidity = float(main.get("humidity", 0.0) or 0.0)
+        condition = str(weather[0].get("main", "")) if weather else ""
+
+        temp_risk = np.clip((temp - 20.0) / 20.0, 0.0, 1.0)
+        humidity_risk = np.clip((humidity - 50.0) / 50.0, 0.0, 1.0)
+        condition_risk = 0.2 if condition.lower() in {"rain", "thunderstorm", "drizzle", "mist", "haze"} else 0.0
+        risk = float(np.clip((0.4 * temp_risk) + (0.4 * humidity_risk) + condition_risk, 0.0, 1.0))
+
+        return {
+            "risk": round(risk, 4),
+            "source": "openweather",
+            "temp": temp,
+            "humidity": humidity,
+            "condition": condition,
+        }
+    except Exception as exc:
+        return {"risk": 0.0, "source": "fallback", "reason": str(exc)}
 
 
 def _fetch_region_history_with_fallback(region: str, history_days: int, timeout: int) -> pd.DataFrame:
