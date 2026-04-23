@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
+    # Load environment variables from project-level .env when present.
+    config_dir = Path(config_path).resolve().parent
+    load_environment(str(config_dir / ".env"))
+    load_environment(".env")
     with open(config_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file)
 

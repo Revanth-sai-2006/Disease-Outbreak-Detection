@@ -36,6 +36,9 @@ def load_or_create_raw_data_with_context(config: Dict[str, Any]) -> tuple[pd.Dat
                     "rows": int(len(df)),
                     "regions": sorted(df["region"].astype(str).unique().tolist()),
                     "term_profiles": web_context.get("term_profiles", {}),
+                    "weather_api_configured": bool(web_context.get("weather_api_configured", False)),
+                    "weather_profiles": web_context.get("weather_profiles", {}),
+                    "data_gov_in": web_context.get("data_gov_in", {}),
                 },
                 "outputs/data_source_status.json",
             )

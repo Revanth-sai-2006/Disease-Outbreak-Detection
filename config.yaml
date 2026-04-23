@@ -63,10 +63,21 @@ alerts:
     critical: 0.9
 
 apis:
+  data_gov_in:
+    base_url: https://api.data.gov.in/resource
+    resource_id: null  # Set your data.gov.in resource id to enable this source
+    date_field: report_date
+    cases_field: hospital_cases
+    region_field: state
+    limit: 1000
+    max_pages: 10
+    filters: {}  # Optional query params supported by the dataset API
+    api_key: null  # Recommended: set DATA_GOV_IN_API_KEY as an environment variable
   weather:
     base_url: https://api.openweathermap.org/data/2.5/weather
     city: Berlin
     units: metric
+    api_key: null  # Recommended: set OPENWEATHER_API_KEY as an environment variable
   social:
     provider_name: custom_social_provider
     endpoint_url: https://example-social-signal/api/v1/signal

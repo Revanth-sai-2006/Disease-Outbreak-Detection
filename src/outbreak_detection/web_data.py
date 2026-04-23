@@ -25,17 +25,50 @@ def fetch_web_surveillance_bundle(config: Dict[str, Any]) -> Tuple[pd.DataFrame,
     lookback_days = int(web_cfg.get("live_search_lookback_days", 3))
     timeout = int(web_cfg.get("request_timeout_seconds", 20))
     weather_cfg = config.get("apis", {}).get("weather", {})
-    weather_key = str(weather_cfg.get("api_key", "")).strip() or os.environ.get("OPENWEATHER_API_KEY", "").strip()
+    weather_key = _clean_optional_str(weather_cfg.get("api_key")) or _clean_optional_str(os.environ.get("OPENWEATHER_API_KEY"))
     weather_base_url = str(weather_cfg.get("base_url", "https://api.openweathermap.org/data/2.5/weather"))
     weather_units = str(weather_cfg.get("units", "metric"))
+    data_gov_cfg = config.get("apis", {}).get("data_gov_in", {})
+    data_gov_key = _clean_optional_str(data_gov_cfg.get("api_key")) or _clean_optional_str(os.environ.get("DATA_GOV_IN_API_KEY"))
+    data_gov_resource_id = _clean_optional_str(os.environ.get("DATA_GOV_IN_RESOURCE_ID")) or _clean_optional_str(
+        data_gov_cfg.get("resource_id")
+    )
+    if data_gov_resource_id:
+        data_gov_cfg = {**data_gov_cfg, "resource_id": data_gov_resource_id}
 
     region_frames: List[pd.DataFrame] = []
     news_counts: Dict[str, int] = {}
     term_profiles: Dict[str, Dict[str, int]] = {}
     weather_profiles: Dict[str, Dict[str, Any]] = {}
+    history_by_region: Dict[str, pd.DataFrame] = {}
+    data_gov_status: Dict[str, Any] = {
+        "configured": bool(data_gov_key and data_gov_resource_id),
+        "resource_id": data_gov_resource_id,
+        "error": None,
+        "regions_covered": [],
+    }
+
+    if data_gov_status["configured"]:
+        try:
+            data_gov_df = _fetch_data_gov_history(
+                regions=regions,
+                data_gov_cfg=data_gov_cfg,
+                api_key=data_gov_key,
+                timeout=timeout,
+            )
+            if not data_gov_df.empty:
+                for region in regions:
+                    region_df = data_gov_df.loc[data_gov_df["region"] == region, ["report_date", "hospital_cases"]].copy()
+                    if not region_df.empty:
+                        history_by_region[region] = region_df
+                data_gov_status["regions_covered"] = sorted(history_by_region.keys())
+        except Exception as exc:
+            data_gov_status["error"] = str(exc)
 
     for region in regions:
-        history_df = _fetch_region_history_with_fallback(region=region, history_days=history_days, timeout=timeout)
+        history_df = history_by_region.get(region)
+        if history_df is None or history_df.empty:
+            history_df = _fetch_region_history_with_fallback(region=region, history_days=history_days, timeout=timeout)
         term_counts = _fetch_live_search_profile(region=region, terms=terms, lookback_days=lookback_days, timeout=timeout)
         news_counts[region] = int(sum(term_counts.values()))
         term_profiles[region] = term_counts
@@ -83,8 +116,109 @@ def fetch_web_surveillance_bundle(config: Dict[str, Any]) -> Tuple[pd.DataFrame,
         "live_search_terms": terms,
         "live_search_lookback_days": lookback_days,
         "weather_api_configured": bool(weather_key),
+        "data_gov_in": data_gov_status,
     }
     return out, context
+
+
+def _fetch_data_gov_history(
+    regions: List[str],
+    data_gov_cfg: Dict[str, Any],
+    api_key: str,
+    timeout: int,
+) -> pd.DataFrame:
+    base_url = str(data_gov_cfg.get("base_url", "https://api.data.gov.in/resource")).rstrip("/")
+    resource_id = _clean_optional_str(data_gov_cfg.get("resource_id"))
+    date_field = str(data_gov_cfg.get("date_field", "report_date"))
+    cases_field = str(data_gov_cfg.get("cases_field", "hospital_cases"))
+    region_field = str(data_gov_cfg.get("region_field", "state"))
+    page_size = int(data_gov_cfg.get("limit", 1000))
+    max_pages = int(data_gov_cfg.get("max_pages", 10))
+    extra_filters = dict(data_gov_cfg.get("filters", {}))
+
+    if not resource_id:
+        raise ValueError("apis.data_gov_in.resource_id is required when data.gov.in source is configured")
+
+    url = f"{base_url}/{quote(resource_id)}"
+
+    records: List[Dict[str, Any]] = []
+    for page in range(max_pages):
+        offset = page * page_size
+        params: Dict[str, Any] = {
+            "api-key": api_key,
+            "format": "json",
+            "limit": page_size,
+            "offset": offset,
+        }
+        params.update(extra_filters)
+
+        response = requests.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+
+        page_records = payload.get("records", [])
+        if not page_records:
+            break
+        records.extend(page_records)
+
+        if len(page_records) < page_size:
+            break
+
+    if not records:
+        return pd.DataFrame(columns=["report_date", "region", "hospital_cases"])
+
+    frame = pd.DataFrame(records)
+    required = [date_field, cases_field]
+    missing = [name for name in required if name not in frame.columns]
+    if missing:
+        joined = ", ".join(missing)
+        raise ValueError(f"Configured data.gov.in fields missing from response: {joined}")
+
+    if region_field not in frame.columns:
+        frame[region_field] = "India"
+
+    frame = frame.rename(
+        columns={
+            date_field: "report_date",
+            region_field: "region",
+            cases_field: "hospital_cases",
+        }
+    )
+    frame["report_date"] = pd.to_datetime(frame["report_date"], errors="coerce")
+    frame["hospital_cases"] = pd.to_numeric(frame["hospital_cases"], errors="coerce")
+    frame["region"] = frame["region"].astype(str).str.strip()
+    frame = frame.dropna(subset=["report_date", "hospital_cases"])
+
+    if frame.empty:
+        return pd.DataFrame(columns=["report_date", "region", "hospital_cases"])
+
+    requested = {_normalize_region_name(region): region for region in regions}
+    frame["_region_key"] = frame["region"].map(_normalize_region_name)
+    frame = frame[frame["_region_key"].isin(requested)]
+    frame["region"] = frame["_region_key"].map(requested)
+    frame = frame.drop(columns=["_region_key"])
+
+    if frame.empty:
+        return pd.DataFrame(columns=["report_date", "region", "hospital_cases"])
+
+    grouped = (
+        frame.groupby(["region", "report_date"], as_index=False)["hospital_cases"]
+        .sum()
+        .sort_values(["region", "report_date"])
+        .reset_index(drop=True)
+    )
+    return grouped
+
+
+def _normalize_region_name(value: str) -> str:
+    return " ".join(str(value).strip().lower().split())
+
+
+def _clean_optional_str(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.lower() in {"", "none", "null"}:
+        return ""
+    return text
 
 
 def _fetch_current_weather_profile(

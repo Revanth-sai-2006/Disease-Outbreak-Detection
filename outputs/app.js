@@ -282,10 +282,27 @@
     }
 
     function renderSourceStatus(obj) {
-      const html = Object.entries(obj || {}).map(([k, v]) =>
-        `<div><strong>${k}:</strong> ${typeof v === "object" ? JSON.stringify(v) : String(v)}</div>`
-      ).join("");
-      document.getElementById("source-status").innerHTML = html || "No source status available.";
+      const status = obj || {};
+      const dataGov = status.data_gov_in || {};
+      const weatherConfigured = !!status.weather_api_configured;
+      const dataGovConfigured = !!dataGov.configured;
+      const dataGovRegions = Array.isArray(dataGov.regions_covered) ? dataGov.regions_covered : [];
+
+      const rows = [
+        `<div><strong>status:</strong> ${String(status.status || "unknown")}</div>`,
+        `<div><strong>source:</strong> ${String(status.source || "unknown")}</div>`,
+        `<div><strong>rows:</strong> ${String(status.rows ?? "n/a")}</div>`,
+        `<div><strong>weather_api_configured:</strong> ${weatherConfigured ? "yes" : "no"}</div>`,
+        `<div><strong>data_gov_in_configured:</strong> ${dataGovConfigured ? "yes" : "no"}</div>`,
+        `<div><strong>data_gov_in_resource_id:</strong> ${String(dataGov.resource_id || "not set")}</div>`,
+        `<div><strong>data_gov_in_regions_covered:</strong> ${dataGovRegions.length ? dataGovRegions.join(", ") : "none"}</div>`,
+      ];
+
+      if (dataGov.error) {
+        rows.push(`<div><strong>data_gov_in_error:</strong> ${String(dataGov.error)}</div>`);
+      }
+
+      document.getElementById("source-status").innerHTML = rows.join("") || "No source status available.";
     }
 
     function setSyncTime() {
@@ -347,13 +364,17 @@
     async function bootstrap() {
       const errorBox = document.getElementById("error-box");
       try {
-        const [summary, outlook, alertsCsv] = await Promise.all([
-          getJson("/outputs/pipeline_summary.json"),
-          getJson("/outputs/region_outlook.json"),
-          getText("/outputs/alerts.csv"),
-        ]);
+        const dashboard = await getApiJson("/api/dashboard");
+        const summary = dashboard.summary || {};
+        const outlook = dashboard.outlook || { regions: [] };
         currentOutlook = outlook;
-        recentAlerts = parseCsv(alertsCsv);
+
+        try {
+          const alertsCsv = await getText("/outputs/alerts.csv");
+          recentAlerts = parseCsv(alertsCsv);
+        } catch (_ignored) {
+          recentAlerts = [];
+        }
 
         document.getElementById("headline").textContent = outlook.headline || "Regional outbreak watch loaded.";
         document.getElementById("generated").textContent = `Generated at: ${outlook.generated_at_utc || "unknown"}`;
@@ -369,12 +390,7 @@
         }
         renderCityDetails(selectedRegion);
 
-        try {
-          const sourceStatus = await getJson("/outputs/data_source_status.json");
-          renderSourceStatus(sourceStatus);
-        } catch (_ignored) {
-          renderSourceStatus({ status: "unknown" });
-        }
+        renderSourceStatus(dashboard.source_status || { status: "unknown" });
 
         if (phcAutoEnabled) {
           const marker = outlook.generated_at_utc || "";

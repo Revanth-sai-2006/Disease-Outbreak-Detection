@@ -226,4 +226,22 @@ If you choose manual setup instead of Blueprint:
 - **Build Command**: `pip install -r requirements.txt`
 - **Start Command**: `gunicorn dashboard_server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
 
+### Render Environment Variables
+
+Add this variable in Render for live weather-enriched risk signals:
+
+- `OPENWEATHER_API_KEY` = your OpenWeather API key
+
+If you are using a protected dataset from data.gov.in, also add:
+
+- `DATA_GOV_IN_API_KEY` = your data.gov.in API key
+- `DATA_GOV_IN_RESOURCE_ID` = your data.gov.in resource UUID
+
+To enable data.gov.in historical ingestion, set these fields in `config.yaml` under `apis.data_gov_in`:
+
+- `resource_id` = dataset resource UUID
+- `date_field` = date column in that dataset
+- `cases_field` = case count column in that dataset
+- `region_field` = state/city column that should map to your configured `web.regions`
+
 After successful deploy, Render will provide a public URL for the dashboard.
